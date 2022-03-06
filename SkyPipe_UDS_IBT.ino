@@ -16,6 +16,7 @@
         Sep 20, 2019 START MAJOR CHANGE to 15 bits instead of 14.  Faster Autonull
         Dec 03, 2019 encoder & offset changes
         Dec 15, 2019 Calibration of tone routine
+        Mar 05, 2022 no code changes.  Added comments for ADS1115 ADC
         
   In UDS PUSH mode, data is sent every 100 milliSeconds.
   in UDS POLL mode, Data request should not be closer than 100 milliSeconds
@@ -35,7 +36,7 @@
 // ************** WARNING!  SkyPipe will NOT work if debug is true. IT CRASHES!!!  REALLY REALLY BAD!!!
 
 #include <EEPROM.h>             // Allow EEPROM usage
-#include <Wire.h>               // I2C drivers used by ADS1015 ADC
+#include <Wire.h>               // I2C drivers used by ADS1015 12 bit ADC or ADS1115 16 bit ADC
 
 #include "Exp_Lookup.h"         // Table to convert log detector response to linear temperature responce.
 
@@ -54,7 +55,7 @@
 #define LUT_pin           11    // Input.  High for LUT meter output, low for linear.
 #define FW_T_pin          12    // Output Pin wiggles at ADC routine.  Test Point ONLY!!
 #define LED_Pin           13    // LED on this  pin on UNO PWB.     Used as test point.
-//                        14    // Used as Analog 0 input to ADC
+//                        14    // Used as Analog 0 input to internal Arduino 10 bit ADC
 //                        15    // GPIO or A1           **NOT USED**
 //                        16    // GPIO or A2           **NOT USED**
 #define AutoNulPin_L      17    // Was A3.  Now Dig Input. Hold low to seek half scale on adcFiltOut15. Tunes offset PWN to null. 
@@ -73,8 +74,10 @@
 int count100mS = 0;             // counter for 50mS and 100mS internal tasks and 100mS output
 
 // Stuff for ADS1015 ADC
-#define ADS_Adr 0x48            // default I2C address of ADS1015 A/D converter
-#define ADS_Control 0x8B43      // ADS Start, Diff in 0:1,  0.5V span, 490 SPS, Triggered conversion.  Actaul=250 SPS.
+#define ADS_Adr 0x48            // default I2C address of ADS1015 A/D converter.  or ADS1115 also
+                                // ADS sample rate driven by timer. Setup for 250 Hz
+#define ADS_Control 0x8B43      // ADS1015: ADS Start, Diff in 0:1,  0.5V span, 490 SPS, Triggered conversion.  Actaul=250 SPS.
+// #define ADS_Control 0x8BC3   // ADS1115 16 bit ADC:  same above except 475 SPS.   
 boolean i2c_ADC_OK = false;     //Set to true if ADS1015 is found in initialize.  if false use onboard ADC10
 
 boolean poll = true;            // if true then data is polled by RSP using a GETD command
@@ -136,12 +139,12 @@ void setup() {                      //  UDS stat, poll are inialized in assignme
   while (!Serial) ;                 // wait for serial port to connect. Needed for native USB port only.
 
   Wire.begin();
-  Wire.beginTransmission (ADS_Adr);       // Test for ADS1015 present
+  Wire.beginTransmission (ADS_Adr);       // Test for ADS1015 or ADS1115 present.  If present use it!
   if (Wire.endTransmission () == 0) {
     i2c_ADC_OK = true;                    // Set flag for ADS1015 found.  Was defined as false.
     delay(2);                             // needed or not ???
-    write_ADS( ADS_Adr,  ADS_Control);    // kick ADS1015 first conversion
-    delay(4);                             // wait 4mS for first conversion ADS1015
+    write_ADS( ADS_Adr,  ADS_Control);    // kick off ADS1x15 first conversion
+    delay(4);                             // wait 4mS for first ADS1x15 conversion to complete
   }
 
 #if debug
@@ -366,7 +369,7 @@ void GETD() {
 }
 
 /*********************************************************************
-   This pulls cahracters from serial port buffer & throws them away.
+   This pulls characters from serial port buffer & throws them away.
    It is needed because we decode only one character of commands.
 */
 void DumpChar(int charCount) {
@@ -417,7 +420,7 @@ void ADC_Process() {
   digitalWrite(FW_T_pin, LOW);              // # test point for firmware timing.
 }
 /******************************************************************************************
-  Takes input from global analogFiltOut.  Full Scale here is 32787 input and output.
+  Takes input from global analogFiltOut.  Full Scale here is 32767 input and output.
   The exponential output from log input is done with a 1024 length look up table.
   uses interpolation for full 15 bit operation.
 */
@@ -632,7 +635,7 @@ static volatile uint16_t read_ADS ( uint8_t i2C_Adr) {
 }
 
 /*********************************************************************************************************
-* Added July 23, 2019  Modified Sept 24, 2019, Des 2, 2019.    
+* Added July 23, 2019  Modified Sept 24, 2019, Dec 2, 2019.    
 * Called from 100mS task if AutoNul button pushed to request calibration.  
 * Evaluates Filtered Scaled ADC value  and adjusts Offset PWM up or down as needed to center ADC.      
 * I/O through global variables                */ 
